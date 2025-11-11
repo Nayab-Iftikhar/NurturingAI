@@ -1,0 +1,400 @@
+{% extends 'base_app.html' %}
+{% load static %}
+
+{% block title %}ChromaDB Viewer - NurturingAI{% endblock %}
+
+{% block extra_css %}
+<style>
+    .collection-card {
+        margin-bottom: 1.5rem;
+    }
+    .document-card {
+        margin-bottom: 1rem;
+        border-left: 4px solid #667eea;
+    }
+    .metadata-badge {
+        display: inline-block;
+        margin: 2px;
+        padding: 4px 8px;
+        background: #e9ecef;
+        border-radius: 4px;
+        font-size: 0.85rem;
+    }
+    .text-preview {
+        max-height: 150px;
+        overflow-y: auto;
+        background: #f8f9fa;
+        padding: 10px;
+        border-radius: 4px;
+        font-size: 0.9rem;
+        line-height: 1.5;
+    }
+    .collection-tabs {
+        border-bottom: 2px solid #dee2e6;
+        margin-bottom: 1.5rem;
+    }
+    .collection-tabs .nav-link {
+        color: #667eea;
+        border: none;
+        border-bottom: 3px solid transparent;
+        padding: 0.75rem 1.5rem;
+    }
+    .collection-tabs .nav-link.active {
+        color: #667eea;
+        border-bottom-color: #667eea;
+        font-weight: 600;
+    }
+    .collection-tabs .nav-link:hover {
+        border-bottom-color: #667eea;
+        opacity: 0.7;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="page-header">
+        <div class="d-flex justify-content-between align-items-center flex-wrap">
+            <h2><i class="bi bi-database"></i> ChromaDB Contents Viewer</h2>
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" onclick="loadCollections()">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+                <a href="{% url 'documents' %}" class="btn btn-outline-primary">
+                    <i class="bi bi-cloud-upload"></i> Upload Documents
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Collections Overview -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="bi bi-collection"></i> Collections Overview</h5>
+        </div>
+        <div class="card-body">
+            <div id="collectionsOverview" class="row">
+                <div class="col-12 text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Collection Tabs -->
+    <ul class="nav collection-tabs" id="collectionTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="brochures-tab" data-bs-toggle="tab" data-bs-target="#brochures" 
+                    type="button" role="tab" onclick="loadBrochures()">
+                <i class="bi bi-file-earmark-text"></i> Brochures Collection
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="vanna-tab" data-bs-toggle="tab" data-bs-target="#vanna" 
+                    type="button" role="tab" onclick="loadVanna()">
+                <i class="bi bi-code-square"></i> Vanna Training Data
+            </button>
+        </li>
+    </ul>
+
+    <!-- Tab Content -->
+    <div class="tab-content" id="collectionTabContent">
+        <!-- Brochures Tab -->
+        <div class="tab-pane fade show active" id="brochures" role="tabpanel">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-file-earmark-text"></i> Brochure Documents</h5>
+                    <div>
+                        <input type="number" id="brochuresLimit" class="form-control form-control-sm d-inline-block" 
+                               style="width: 100px;" placeholder="Limit" value="100">
+                        <button class="btn btn-sm btn-primary" onclick="loadBrochures()">
+                            <i class="bi bi-search"></i> Load
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="brochuresContent">
+                        <div class="text-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Vanna Tab -->
+        <div class="tab-pane fade" id="vanna" role="tabpanel">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-code-square"></i> Vanna Training Data</h5>
+                </div>
+                <div class="card-body">
+                    <div id="vannaContent">
+                        <p class="text-muted">Click on the tab to load Vanna training data.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Get CSRF token from cookies
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
+    function getApiHeaders() {
+        const headers = {};
+        const csrfToken = getCookie('csrftoken');
+        if (csrfToken) {
+            headers['X-CSRFToken'] = csrfToken;
+        }
+        headers['Content-Type'] = 'application/json';
+        return headers;
+    }
+
+    // Load collections overview
+    async function loadCollections() {
+        const overview = document.getElementById('collectionsOverview');
+        overview.innerHTML = '<div class="col-12 text-center"><div class="spinner-border text-primary"></div></div>';
+        
+        try {
+            const headers = getApiHeaders();
+            delete headers['Content-Type'];
+            
+            const response = await fetch('/api/documents/collections', {
+                headers: headers,
+                credentials: 'include'
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to load collections');
+            }
+            
+            const collections = await response.json();
+            
+            if (collections.length === 0) {
+                overview.innerHTML = '<div class="col-12"><p class="text-muted">No collections found.</p></div>';
+                return;
+            }
+            
+            overview.innerHTML = collections.map(col => `
+                <div class="col-md-6 col-lg-4 mb-3">
+                    <div class="card collection-card">
+                        <div class="card-body">
+                            <h6 class="card-title">${col.name}</h6>
+                            <p class="card-text">
+                                <strong>Documents:</strong> ${col.count}<br>
+                                ${col.metadata.description ? `<small class="text-muted">${col.metadata.description}</small>` : ''}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        } catch (error) {
+            console.error('Error loading collections:', error);
+            overview.innerHTML = `
+                <div class="col-12">
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle"></i> Error loading collections: ${error.message}
+                    </div>
+                </div>
+            `;
+        }
+    }
+
+    // Load brochures
+    async function loadBrochures() {
+        const content = document.getElementById('brochuresContent');
+        content.innerHTML = '<div class="text-center"><div class="spinner-border text-primary"></div></div>';
+        
+        try {
+            const headers = getApiHeaders();
+            delete headers['Content-Type'];
+            
+            const limit = document.getElementById('brochuresLimit').value;
+            const url = limit ? `/api/documents/contents/brochures?limit=${limit}` : '/api/documents/contents/brochures';
+            
+            const response = await fetch(url, {
+                headers: headers,
+                credentials: 'include'
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to load brochures');
+            }
+            
+            const data = await response.json();
+            
+            if (data.total === 0) {
+                content.innerHTML = `
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i> No documents found in brochures collection.
+                        <a href="{% url 'documents' %}">Upload documents</a> to get started.
+                    </div>
+                `;
+                return;
+            }
+            
+            // Group by project
+            const byProject = {};
+            data.documents.forEach(doc => {
+                const project = doc.metadata.project_name || 'Unknown';
+                if (!byProject[project]) {
+                    byProject[project] = [];
+                }
+                byProject[project].push(doc);
+            });
+            
+            let html = `<p class="text-muted mb-3"><strong>Total:</strong> ${data.total} document chunks across ${Object.keys(byProject).length} project(s)</p>`;
+            
+            for (const [project, docs] of Object.entries(byProject)) {
+                html += `
+                    <div class="card mb-3">
+                        <div class="card-header bg-light">
+                            <h6 class="mb-0"><i class="bi bi-building"></i> ${project} (${docs.length} chunks)</h6>
+                        </div>
+                        <div class="card-body">
+                            ${docs.map(doc => `
+                                <div class="document-card card mb-2">
+                                    <div class="card-body">
+                                        <div class="d-flex justify-content-between align-items-start mb-2">
+                                            <div>
+                                                <strong>ID:</strong> <code>${doc.id}</code>
+                                                ${Object.entries(doc.metadata).map(([key, value]) => 
+                                                    `<span class="metadata-badge"><strong>${key}:</strong> ${value}</span>`
+                                                ).join('')}
+                                            </div>
+                                        </div>
+                                        <div class="text-preview">${escapeHtml(doc.text.substring(0, 500))}${doc.text.length > 500 ? '...' : ''}</div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            content.innerHTML = html;
+        } catch (error) {
+            console.error('Error loading brochures:', error);
+            content.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle"></i> Error loading brochures: ${error.message}
+                </div>
+            `;
+        }
+    }
+
+    // Load Vanna training data
+    async function loadVanna() {
+        const content = document.getElementById('vannaContent');
+        content.innerHTML = '<div class="text-center"><div class="spinner-border text-primary"></div></div>';
+        
+        try {
+            const headers = getApiHeaders();
+            delete headers['Content-Type'];
+            
+            const response = await fetch('/api/documents/contents/vanna', {
+                headers: headers,
+                credentials: 'include'
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to load Vanna training data');
+            }
+            
+            const data = await response.json();
+            
+            if (data.total === 0) {
+                content.innerHTML = `
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i> No training data found in Vanna collection.
+                    </div>
+                `;
+                return;
+            }
+            
+            // Group by type
+            const byType = {};
+            data.documents.forEach(doc => {
+                const type = doc.metadata.type || 'unknown';
+                if (!byType[type]) {
+                    byType[type] = [];
+                }
+                byType[type].push(doc);
+            });
+            
+            let html = `<p class="text-muted mb-3"><strong>Total:</strong> ${data.total} training items</p>`;
+            
+            for (const [type, docs] of Object.entries(byType)) {
+                html += `
+                    <div class="card mb-3">
+                        <div class="card-header bg-light">
+                            <h6 class="mb-0"><i class="bi bi-tag"></i> ${type.toUpperCase()} (${docs.length} items)</h6>
+                        </div>
+                        <div class="card-body">
+                            ${docs.map(doc => `
+                                <div class="document-card card mb-2">
+                                    <div class="card-body">
+                                        <div class="d-flex justify-content-between align-items-start mb-2">
+                                            <div>
+                                                <strong>ID:</strong> <code>${doc.id}</code>
+                                                ${Object.entries(doc.metadata).map(([key, value]) => 
+                                                    `<span class="metadata-badge"><strong>${key}:</strong> ${value}</span>`
+                                                ).join('')}
+                                            </div>
+                                        </div>
+                                        <div class="text-preview">${escapeHtml(doc.text.substring(0, 500))}${doc.text.length > 500 ? '...' : ''}</div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            content.innerHTML = html;
+        } catch (error) {
+            console.error('Error loading Vanna data:', error);
+            content.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle"></i> Error loading Vanna training data: ${error.message}
+                </div>
+            `;
+        }
+    }
+
+    // Escape HTML
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // Load on page load
+    window.addEventListener('load', () => {
+        loadCollections();
+        loadBrochures();
+    });
+</script>
+{% endblock %}
+

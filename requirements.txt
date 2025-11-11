@@ -1,0 +1,61 @@
+# Core Framework
+Django>=4.2
+django-ninja>=0.22
+uvicorn[standard]
+
+# Database
+# sqlite3 is built-in with Python
+
+# LangGraph and LangChain
+langgraph==0.2.28
+langchain==0.3.0
+langchain-community==0.3.0
+langchain-openai==0.2.0
+langchain-chroma==0.1.4
+langchain-text-splitters==0.3.0
+
+# Text-to-SQL with Vanna
+vanna==0.5.5
+
+# Vector Store
+chromadb==0.4.22
+
+# Embeddings
+sentence-transformers>=2.7.0
+
+# JWT Authentication
+PyJWT==2.8.0
+python-jose[cryptography]==3.3.0
+bcrypt==4.1.2
+
+# Document Processing
+pypdf==3.17.4
+python-docx==1.1.0
+unstructured==0.11.8
+openpyxl>=3.0.0
+pandas>=2.0.0
+
+# Email
+python-dotenv==1.0.0
+
+# Utilities
+pydantic>=2.0.0
+python-multipart==0.0.6
+httpx==0.25.2
+jinja2
+
+# For free LLM - using OpenAI compatible API
+openai
+
+# Testing
+pytest>=7.0.0
+pytest-django>=4.5.0
+pytest-cov>=4.0.0
+pytest-mock>=3.10.0
+
+# Evaluation
+deepeval>=0.17.0
+
+# PDF generation for tests
+reportlab>=4.0.0
+

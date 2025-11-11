@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Filter Leads - NurturingAI</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body {
+            background: #f8f9fa;
+        }
+        .navbar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .card {
+            border: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+        }
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #5568d3 0%, #653a8f 100%);
+        }
+        .filter-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .results-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+        }
+        .table-responsive {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container">
+            <a class="navbar-brand" href="{% url 'dashboard' %}">
+                <i class="bi bi-robot"></i> NurturingAI
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="{% url 'dashboard' %}">Dashboard</a>
+                <a class="nav-link" href="{% url 'documents' %}">Documents</a>
+                <a class="nav-link active" href="{% url 'leads' %}">Leads</a>
+                <span class="navbar-text me-3">Welcome, {{ user.username }}!</span>
+                <a class="btn btn-outline-light" href="{% url 'logout' %}">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-5">
+        <div class="row">
+            <div class="col-12">
+                <h2 class="mb-4"><i class="bi bi-funnel"></i> Filter Leads</h2>
+                
+                <form id="filterForm">
+                    {% csrf_token %}
+                    
+                    <div class="filter-section">
+                        <h5 class="mb-3">Filter Criteria</h5>
+                        <p class="text-muted small">Note: At least 2 filter criteria must be selected</p>
+                        
+                        <div class="row">
+                            <!-- Last Conversation Date -->
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Last Conversation Date (From)</label>
+                                <input type="date" class="form-control" id="dateFrom" 
+                                       max="" min="">
+                                <small class="text-muted">Select start date (up to 3 years back)</small>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Last Conversation Date (To)</label>
+                                <input type="date" class="form-control" id="dateTo" 
+                                       max="" min="">
+                                <small class="text-muted">Select end date</small>
+                            </div>
+                            
+                            <!-- Project Name -->
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Project Name</label>
+                                <select class="form-select" id="projectName">
+                                    <option value="">-- Select Project --</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Budget Range -->
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label">Min Budget</label>
+                                <input type="number" class="form-control" id="budgetMin" 
+                                       placeholder="e.g., 1000000" min="0" step="1000">
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label">Max Budget</label>
+                                <input type="number" class="form-control" id="budgetMax" 
+                                       placeholder="e.g., 5000000" min="0" step="1000">
+                            </div>
+                            
+                            <!-- Unit Type (Multi-select) -->
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Unit Type</label>
+                                <div class="border rounded p-2" style="max-height: 150px; overflow-y: auto;">
+                                    <div id="unitTypesContainer">
+                                        <!-- Will be populated by JavaScript -->
+                                    </div>
+                                </div>
+                                <small class="text-muted">Select one or more unit types</small>
+                            </div>
+                            
+                            <!-- Lead Status -->
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Lead Status</label>
+                                <select class="form-select" id="leadStatus">
+                                    <option value="">-- Select Status --</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-3">
+                            <button type="submit" class="btn btn-primary" id="filterBtn">
+                                <i class="bi bi-search"></i> Shortlist Leads
+                            </button>
+                            <button type="button" class="btn btn-secondary" id="resetBtn">
+                                <i class="bi bi-arrow-counterclockwise"></i> Reset
+                            </button>
+                        </div>
+                    </div>
+                </form>
+                
+                <!-- Results Section -->
+                <div class="results-section" id="resultsSection" style="display: none;">
+                    <h5 class="mb-3">Filtered Results</h5>
+                    <div class="alert alert-info" id="resultsCount">
+                        <strong>0</strong> leads found matching your criteria
+                    </div>
+                    
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover" id="resultsTable">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Lead ID</th>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Phone</th>
+                                    <th>Project</th>
+                                    <th>Unit Type</th>
+                                    <th>Budget Min</th>
+                                    <th>Budget Max</th>
+                                    <th>Status</th>
+                                    <th>Last Conversation</th>
+                                </tr>
+                            </thead>
+                            <tbody id="resultsTableBody">
+                                <!-- Results will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Set max date to today and min date to 3 years ago
+        const today = new Date().toISOString().split('T')[0];
+        const threeYearsAgo = new Date();
+        threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3);
+        const minDate = threeYearsAgo.toISOString().split('T')[0];
+        
+        document.getElementById('dateFrom').setAttribute('max', today);
+        document.getElementById('dateFrom').setAttribute('min', minDate);
+        document.getElementById('dateTo').setAttribute('max', today);
+        document.getElementById('dateTo').setAttribute('min', minDate);
+        
+        // Get API headers
+        function getApiHeaders() {
+            const headers = {};
+            const token = localStorage.getItem('authToken');
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+            const csrfInput = document.querySelector('[name=csrfmiddlewaretoken]');
+            if (csrfInput) {
+                headers['X-CSRFToken'] = csrfInput.value;
+            }
+            headers['Content-Type'] = 'application/json';
+            return headers;
+        }
+        
+        // Load dropdown options
+        async function loadDropdownOptions() {
+            try {
+                const headers = getApiHeaders();
+                
+                // Load projects
+                const projectsRes = await fetch('/api/leads/projects', {
+                    headers: headers,
+                    credentials: 'include'
+                });
+                if (projectsRes.ok) {
+                    const projects = await projectsRes.json();
+                    const projectSelect = document.getElementById('projectName');
+                    projects.forEach(project => {
+                        const option = document.createElement('option');
+                        option.value = project;
+                        option.textContent = project;
+                        projectSelect.appendChild(option);
+                    });
+                }
+                
+                // Load unit types
+                const unitTypesRes = await fetch('/api/leads/unit-types', {
+                    headers: headers,
+                    credentials: 'include'
+                });
+                if (unitTypesRes.ok) {
+                    const unitTypes = await unitTypesRes.json();
+                    const container = document.getElementById('unitTypesContainer');
+                    unitTypes.forEach(unitType => {
+                        const div = document.createElement('div');
+                        div.className = 'form-check';
+                        div.innerHTML = `
+                            <input class="form-check-input" type="checkbox" value="${unitType}" id="unit_${unitType.replace(/\s+/g, '_')}">
+                            <label class="form-check-label" for="unit_${unitType.replace(/\s+/g, '_')}">
+                                ${unitType}
+                            </label>
+                        `;
+                        container.appendChild(div);
+                    });
+                }
+                
+                // Load statuses
+                const statusesRes = await fetch('/api/leads/statuses', {
+                    headers: headers,
+                    credentials: 'include'
+                });
+                if (statusesRes.ok) {
+                    const statuses = await statusesRes.json();
+                    const statusSelect = document.getElementById('leadStatus');
+                    statuses.forEach(status => {
+                        const option = document.createElement('option');
+                        option.value = status;
+                        option.textContent = status;
+                        statusSelect.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading dropdown options:', error);
+            }
+        }
+        
+        // Form submission
+        document.getElementById('filterForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            // Collect filter values
+            const dateFrom = document.getElementById('dateFrom').value;
+            const dateTo = document.getElementById('dateTo').value;
+            const projectName = document.getElementById('projectName').value;
+            const budgetMin = document.getElementById('budgetMin').value;
+            const budgetMax = document.getElementById('budgetMax').value;
+            const leadStatus = document.getElementById('leadStatus').value;
+            
+            // Collect selected unit types
+            const unitTypeCheckboxes = document.querySelectorAll('#unitTypesContainer input[type="checkbox"]:checked');
+            const unitTypes = Array.from(unitTypeCheckboxes).map(cb => cb.value);
+            
+            // Build filter object
+            const filters = {};
+            if (dateFrom) filters.last_conversation_date_from = dateFrom;
+            if (dateTo) filters.last_conversation_date_to = dateTo;
+            if (projectName) filters.project_name = projectName;
+            if (budgetMin) filters.budget_min = parseFloat(budgetMin);
+            if (budgetMax) filters.budget_max = parseFloat(budgetMax);
+            if (unitTypes.length > 0) filters.unit_types = unitTypes;
+            if (leadStatus) filters.status = leadStatus;
+            
+            // Disable button
+            const filterBtn = document.getElementById('filterBtn');
+            filterBtn.disabled = true;
+            filterBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Filtering...';
+            
+            try {
+                const headers = getApiHeaders();
+                const response = await fetch('/api/leads/filter', {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify(filters),
+                    credentials: 'include'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // Display results
+                    document.getElementById('resultsCount').innerHTML = 
+                        `<strong>${data.count}</strong> leads found matching your criteria`;
+                    
+                    const tbody = document.getElementById('resultsTableBody');
+                    tbody.innerHTML = '';
+                    
+                    if (data.leads.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="10" class="text-center">No leads found</td></tr>';
+                    } else {
+                        data.leads.forEach(lead => {
+                            const row = document.createElement('tr');
+                            row.innerHTML = `
+                                <td>${lead.lead_id}</td>
+                                <td>${lead.name}</td>
+                                <td>${lead.email}</td>
+                                <td>+${lead.country_code} ${lead.phone}</td>
+                                <td>${lead.project_name}</td>
+                                <td>${lead.unit_type}</td>
+                                <td>${lead.budget_min ? formatNumber(lead.budget_min) : '-'}</td>
+                                <td>${lead.budget_max ? formatNumber(lead.budget_max) : '-'}</td>
+                                <td><span class="badge bg-secondary">${lead.status}</span></td>
+                                <td>${lead.last_conversation_date || '-'}</td>
+                            `;
+                            tbody.appendChild(row);
+                        });
+                    }
+                    
+                    document.getElementById('resultsSection').style.display = 'block';
+                    
+                    // Store lead IDs in localStorage for campaign creation
+                    const leadIds = data.leads.map(lead => lead.lead_id);
+                    localStorage.setItem('filteredLeadIds', JSON.stringify(leadIds));
+                    
+                    // Add button to create campaign
+                    if (!document.getElementById('createCampaignBtn')) {
+                        const createBtn = document.createElement('button');
+                        createBtn.id = 'createCampaignBtn';
+                        createBtn.className = 'btn btn-success mt-3';
+                        createBtn.innerHTML = '<i class="bi bi-megaphone"></i> Create Campaign with These Leads';
+                        createBtn.onclick = () => {
+                            window.location.href = '/campaigns/';
+                        };
+                        document.getElementById('resultsCount').appendChild(createBtn);
+                    }
+                } else {
+                    alert(data.error || 'Error filtering leads');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error filtering leads: ' + error.message);
+            } finally {
+                filterBtn.disabled = false;
+                filterBtn.innerHTML = '<i class="bi bi-search"></i> Shortlist Leads';
+            }
+        });
+        
+        // Reset form
+        document.getElementById('resetBtn').addEventListener('click', () => {
+            document.getElementById('filterForm').reset();
+            document.getElementById('resultsSection').style.display = 'none';
+            // Uncheck all unit type checkboxes
+            document.querySelectorAll('#unitTypesContainer input[type="checkbox"]').forEach(cb => {
+                cb.checked = false;
+            });
+        });
+        
+        // Format number with commas
+        function formatNumber(num) {
+            return new Intl.NumberFormat('en-IN').format(num);
+        }
+        
+        // Load options on page load
+        loadDropdownOptions();
+    </script>
+</body>
+</html>
+

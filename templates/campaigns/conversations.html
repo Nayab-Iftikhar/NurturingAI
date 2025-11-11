@@ -1,0 +1,446 @@
+{% extends 'base_app.html' %}
+{% load static %}
+
+{% block title %}Conversations - NurturingAI{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="page-header">
+        <div class="d-flex justify-content-between align-items-center flex-wrap">
+            <h2><i class="bi bi-envelope"></i> Sent Emails & Conversations</h2>
+            <div class="d-flex gap-2">
+                <a href="{% url 'campaigns' %}" class="btn btn-outline-primary">
+                    <i class="bi bi-plus-circle"></i> Create Campaign
+                </a>
+                <a href="{% url 'campaigns_list' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-list"></i> View Campaigns
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter Section -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="bi bi-funnel"></i> Filter Conversations</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label class="form-label">Campaign</label>
+                    <select class="form-select" id="filterCampaign">
+                        <option value="">All Campaigns</option>
+                    </select>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label">Lead</label>
+                    <input type="text" class="form-control" id="filterLead" placeholder="Search by lead name or email">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label">Status</label>
+                    <select class="form-select" id="filterStatus">
+                        <option value="">All</option>
+                        <option value="sent">Sent Only</option>
+                        <option value="with_replies">With Replies</option>
+                    </select>
+                </div>
+            </div>
+            <button class="btn btn-primary" onclick="loadConversations()">
+                <i class="bi bi-search"></i> Apply Filters
+            </button>
+        </div>
+    </div>
+
+    <!-- Conversations List -->
+    <div id="conversationsList" class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="text-muted mt-2">Loading conversations...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Reply Modal -->
+<div class="modal fade" id="replyModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-reply"></i> Customer Reply & Agent Response</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="replyModalContent">
+                    <!-- Content will be loaded dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Get CSRF token from cookies
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
+    function getApiHeaders() {
+        const headers = {};
+        const csrfToken = getCookie('csrftoken');
+        if (csrfToken) {
+            headers['X-CSRFToken'] = csrfToken;
+        }
+        headers['Content-Type'] = 'application/json';
+        return headers;
+    }
+
+    let allCampaigns = [];
+
+    // Load campaigns for filter dropdown
+    async function loadCampaigns() {
+        try {
+            const headers = getApiHeaders();
+            delete headers['Content-Type'];
+            
+            const response = await fetch('/api/campaigns/list', {
+                method: 'GET',
+                headers: headers,
+                credentials: 'include'
+            });
+            
+            if (response.ok) {
+                allCampaigns = await response.json();
+                const select = document.getElementById('filterCampaign');
+                allCampaigns.forEach(campaign => {
+                    const option = document.createElement('option');
+                    option.value = campaign.id;
+                    option.textContent = campaign.name || campaign.project_name;
+                    select.appendChild(option);
+                });
+            }
+        } catch (error) {
+            console.error('Error loading campaigns:', error);
+        }
+    }
+
+    // Load conversations
+    async function loadConversations() {
+        const conversationsList = document.getElementById('conversationsList');
+        conversationsList.innerHTML = '<div class="col-12"><div class="card"><div class="card-body text-center"><div class="spinner-border text-primary"></div><p class="text-muted mt-2">Loading conversations...</p></div></div></div>';
+        
+        try {
+            const headers = getApiHeaders();
+            delete headers['Content-Type'];
+            
+            const campaignId = document.getElementById('filterCampaign').value;
+            const leadFilter = document.getElementById('filterLead').value.toLowerCase();
+            const statusFilter = document.getElementById('filterStatus').value;
+            
+            // Get all conversations (they now include campaign and lead info)
+            const allConvsResponse = await fetch('/api/agent/queries', {
+                method: 'GET',
+                headers: headers,
+                credentials: 'include'
+            });
+            
+            if (!allConvsResponse.ok) {
+                throw new Error('Failed to load conversations');
+            }
+            
+            let allConversations = await allConvsResponse.json();
+            
+            // Filter by campaign
+            if (campaignId) {
+                allConversations = allConversations.filter(c => c.campaign_id == campaignId);
+            }
+            
+            // Filter by lead name/email
+            if (leadFilter) {
+                allConversations = allConversations.filter(c => 
+                    c.lead_name && (c.lead_name.toLowerCase().includes(leadFilter) ||
+                    (c.lead_email && c.lead_email.toLowerCase().includes(leadFilter)))
+                );
+            }
+            
+            // Group conversations by campaign_lead_id
+            const conversationsByCampaignLead = {};
+            allConversations.forEach(conv => {
+                const clId = conv.campaign_lead_id;
+                if (!conversationsByCampaignLead[clId]) {
+                    conversationsByCampaignLead[clId] = {
+                        campaignLeadId: clId,
+                        campaign: {
+                            id: conv.campaign_id,
+                            name: conv.campaign_name,
+                            project_name: conv.project_name
+                        },
+                        lead: {
+                            lead_id: conv.lead_id,
+                            name: conv.lead_name,
+                            email: conv.lead_email
+                        },
+                        conversations: []
+                    };
+                }
+                conversationsByCampaignLead[clId].conversations.push(conv);
+            });
+            
+            // Build conversations data
+            const conversationsData = [];
+            for (const clId in conversationsByCampaignLead) {
+                const clData = conversationsByCampaignLead[clId];
+                const sortedConvs = clData.conversations.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+                const sentMessages = sortedConvs.filter(c => c.sender === 'agent');
+                const customerReplies = sortedConvs.filter(c => c.sender === 'customer');
+                
+                if (sentMessages.length > 0) {
+                    conversationsData.push({
+                        campaignLead: {
+                            campaign: clData.campaign,
+                            lead: clData.lead,
+                            campaignId: clData.campaign.id
+                        },
+                        campaignLeadId: clId,
+                        sentMessages: sentMessages,
+                        customerReplies: customerReplies,
+                        allConversations: sortedConvs
+                    });
+                }
+            }
+            
+            // Filter by status
+            let filteredData = conversationsData;
+            if (statusFilter === 'with_replies') {
+                filteredData = conversationsData.filter(cd => cd.customerReplies.length > 0);
+            } else if (statusFilter === 'sent') {
+                filteredData = conversationsData.filter(cd => cd.customerReplies.length === 0);
+            }
+            
+            displayConversations(filteredData);
+            
+        } catch (error) {
+            console.error('Error loading conversations:', error);
+            conversationsList.innerHTML = `
+                <div class="col-12">
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle"></i> Error loading conversations: ${error.message}
+                    </div>
+                </div>
+            `;
+        }
+    }
+
+    function displayConversations(conversationsData) {
+        const conversationsList = document.getElementById('conversationsList');
+        
+        if (conversationsData.length === 0) {
+            conversationsList.innerHTML = `
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-body text-center">
+                            <i class="bi bi-inbox" style="font-size: 3rem; color: #ccc;"></i>
+                            <h5 class="mt-3">No conversations found</h5>
+                            <p class="text-muted">No conversations match your filters</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+        
+        conversationsList.innerHTML = conversationsData.map(cd => {
+            const cl = cd.campaignLead;
+            const hasReplies = cd.customerReplies.length > 0;
+            const lastSentMessage = cd.sentMessages[cd.sentMessages.length - 1];
+            const lastReply = cd.customerReplies[cd.customerReplies.length - 1];
+            
+            return `
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card h-100 ${hasReplies ? 'border-warning' : ''}">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-0">${cl.lead.name || 'Unknown'}</h6>
+                                <small class="text-white-50">${cl.lead.email || ''}</small>
+                            </div>
+                            ${hasReplies ? '<span class="badge bg-warning">Has Replies</span>' : '<span class="badge bg-success">Sent</span>'}
+                        </div>
+                        <div class="card-body">
+                            <p class="mb-2"><strong><i class="bi bi-megaphone"></i> Campaign:</strong> ${cl.campaign.name || cl.campaign.project_name}</p>
+                            <p class="mb-2"><strong><i class="bi bi-building"></i> Project:</strong> ${cl.lead.project_name || cl.campaign.project_name}</p>
+                            <p class="mb-2"><strong><i class="bi bi-calendar"></i> Sent:</strong> ${lastSentMessage ? new Date(lastSentMessage.created_at).toLocaleString() : 'N/A'}</p>
+                            ${lastReply ? `<p class="mb-2"><strong><i class="bi bi-reply"></i> Last Reply:</strong> ${new Date(lastReply.created_at).toLocaleString()}</p>` : ''}
+                            
+                            <div class="mt-3 d-grid gap-2">
+                                <button class="btn btn-primary btn-sm view-conversation-btn" 
+                                        data-campaign-lead-id="${cd.campaignLeadId}"
+                                        data-lead-name="${cl.lead.name}"
+                                        data-lead-email="${cl.lead.email}">
+                                    <i class="bi bi-chat"></i> View Conversation
+                                </button>
+                                ${!hasReplies ? `
+                                    <button class="btn btn-success btn-sm paste-reply-btn" 
+                                            data-campaign-lead-id="${cd.campaignLeadId}"
+                                            data-lead-name="${cl.lead.name}">
+                                        <i class="bi bi-clipboard"></i> Paste Reply
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        // Add event listeners
+        document.querySelectorAll('.view-conversation-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const campaignLeadId = e.currentTarget.dataset.campaignLeadId;
+                const leadName = e.currentTarget.dataset.leadName;
+                const leadEmail = e.currentTarget.dataset.leadEmail;
+                viewConversation(campaignLeadId, leadName, leadEmail);
+            });
+        });
+        
+        document.querySelectorAll('.paste-reply-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const campaignLeadId = e.currentTarget.dataset.campaignLeadId;
+                const leadName = e.currentTarget.dataset.leadName;
+                showPasteReplyModal(campaignLeadId, leadName);
+            });
+        });
+    }
+
+    async function viewConversation(campaignLeadId, leadName, leadEmail) {
+        try {
+            const headers = getApiHeaders();
+            delete headers['Content-Type'];
+            
+            const response = await fetch(`/api/agent/queries?campaign_lead_id=${campaignLeadId}`, {
+                method: 'GET',
+                headers: headers,
+                credentials: 'include'
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to load conversation');
+            }
+            
+            const conversations = await response.json();
+            const sorted = conversations.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+            
+            const modalContent = document.getElementById('replyModalContent');
+            modalContent.innerHTML = `
+                <div class="mb-3">
+                    <h6>Lead: ${leadName} (${leadEmail})</h6>
+                </div>
+                <div class="conversation-thread" style="max-height: 400px; overflow-y: auto;">
+                    ${sorted.map(conv => `
+                        <div class="mb-3 p-3 rounded ${conv.sender === 'customer' ? 'bg-light' : 'bg-primary text-white'}">
+                            <div class="d-flex justify-content-between mb-2">
+                                <strong>${conv.sender === 'customer' ? 'Customer' : 'Agent'}</strong>
+                                <small>${new Date(conv.created_at).toLocaleString()}</small>
+                            </div>
+                            <div>${conv.message}</div>
+                            ${conv.agent_tool_used ? `<small class="text-muted">Tool: ${conv.agent_tool_used}</small>` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="mt-3">
+                    <label class="form-label">Paste Customer Reply:</label>
+                    <textarea class="form-control" id="customerReplyText" rows="3" placeholder="Paste the customer's reply here..."></textarea>
+                    <button class="btn btn-primary mt-2" onclick="submitReply(${campaignLeadId})">
+                        <i class="bi bi-send"></i> Submit Reply & Get Agent Response
+                    </button>
+                </div>
+            `;
+            
+            const modal = new bootstrap.Modal(document.getElementById('replyModal'));
+            modal.show();
+            
+        } catch (error) {
+            console.error('Error:', error);
+            alert(`Error loading conversation: ${error.message}`);
+        }
+    }
+
+    function showPasteReplyModal(campaignLeadId, leadName) {
+        const modalContent = document.getElementById('replyModalContent');
+        modalContent.innerHTML = `
+            <div class="mb-3">
+                <h6>Lead: ${leadName}</h6>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Paste Customer Reply:</label>
+                <textarea class="form-control" id="customerReplyText" rows="5" placeholder="Paste the customer's reply here..."></textarea>
+            </div>
+            <button class="btn btn-primary" onclick="submitReply(${campaignLeadId})">
+                <i class="bi bi-send"></i> Submit Reply & Get Agent Response
+            </button>
+        `;
+        
+        const modal = new bootstrap.Modal(document.getElementById('replyModal'));
+        modal.show();
+    }
+
+    async function submitReply(campaignLeadId) {
+        const replyText = document.getElementById('customerReplyText').value.trim();
+        
+        if (!replyText) {
+            alert('Please paste the customer reply');
+            return;
+        }
+        
+        try {
+            const headers = getApiHeaders();
+            const response = await fetch('/api/agent/queries', {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({
+                    campaign_lead_id: parseInt(campaignLeadId),
+                    query: replyText
+                }),
+                credentials: 'include'
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok) {
+                alert(`Agent response generated successfully!\n\nTool used: ${data.tool_used}\n\nResponse: ${data.response.substring(0, 200)}...`);
+                // Reload conversations
+                loadConversations();
+                // Close modal
+                const modal = bootstrap.Modal.getInstance(document.getElementById('replyModal'));
+                if (modal) modal.hide();
+            } else {
+                alert(`Error: ${data.error || data.message || 'Failed to submit reply'}`);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert(`Error submitting reply: ${error.message}`);
+        }
+    }
+
+    // Make submitReply available globally
+    window.submitReply = submitReply;
+
+    // Load on page load
+    loadCampaigns();
+    loadConversations();
+</script>
+{% endblock %}

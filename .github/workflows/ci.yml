@@ -1,0 +1,153 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Cache pip packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libpq-dev
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Set up environment variables
+      run: |
+        echo "SECRET_KEY=test-secret-key-for-ci" >> $GITHUB_ENV
+        echo "DEBUG=True" >> $GITHUB_ENV
+        echo "ALLOWED_HOSTS=localhost,127.0.0.1" >> $GITHUB_ENV
+        echo "JWT_SECRET_KEY=test-jwt-secret" >> $GITHUB_ENV
+        echo "EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend" >> $GITHUB_ENV
+        echo "TEST_EMAIL=test@example.com" >> $GITHUB_ENV
+        echo "DEFAULT_FROM_EMAIL=test@example.com" >> $GITHUB_ENV
+        echo "CHROMA_PERSIST_DIRECTORY=/tmp/chromadb_test" >> $GITHUB_ENV
+        echo "EMBEDDING_MODEL=all-MiniLM-L6-v2" >> $GITHUB_ENV
+    
+    - name: Run database migrations
+      run: |
+        python manage.py migrate --noinput
+    
+    - name: Run tests with pytest
+      run: |
+        pytest tests/ -v --cov=. --cov-report=xml --cov-report=term-missing --tb=short
+      env:
+        DJANGO_SETTINGS_MODULE: config.settings
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        OLLAMA_BASE_URL: http://localhost:11434
+    
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      if: always()
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+    
+    - name: Run DeepEval evaluation (optional)
+      if: env.OPENAI_API_KEY != ''
+      run: |
+        python manage.py migrate --noinput
+        pytest tests/test_agent_evaluation.py -v -k "test_full_evaluation_suite" || true
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        OLLAMA_BASE_URL: http://localhost:11434
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: false
+        tags: nurturingai:latest
+        cache-from: type=registry,ref=nurturingai:buildcache
+        cache-to: type=registry,ref=nurturingai:buildcache,mode=max
+    
+    - name: Test Docker image
+      run: |
+        docker run --rm -d --name test-container -p 8000:8000 \
+          -e SECRET_KEY=test-secret \
+          -e DEBUG=True \
+          -e ALLOWED_HOSTS=localhost \
+          -e EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend \
+          nurturingai:latest
+        sleep 10
+        curl -f http://localhost:8000/api/hello || exit 1
+        docker stop test-container
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install linting tools
+      run: |
+        pip install flake8 black isort
+    
+    - name: Run flake8
+      run: |
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics || true
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics || true
+    
+    - name: Check code formatting with black
+      run: |
+        black --check . || true
+    
+    - name: Check import sorting with isort
+      run: |
+        isort --check-only . || true
+
