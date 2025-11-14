@@ -193,7 +193,9 @@ logs/
 *.log.*
 
 # Docker
+# Keep Dockerfile and docker-compose.yml, but ignore other Docker files
 .dockerignore
+docker-compose.override.yml
 
 # Temporary files
 *.tmp
@@ -324,3 +326,122 @@ logs/
 !data/brochures/.gitkeep
 !media/.gitkeep
 !staticfiles/.gitkeep
+
+# Project-specific files that shouldn't be committed
+# Test data and sample files
+Mock CRM leads for nurturing.xlsx
+nurturing_ai.zip
+update_env_instructions.txt
+.gitignore_summary.txt
+
+# Coverage and test results
+coverage.json
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE and editor files
+*.iml
+.idea/
+.vscode/
+*.sublime-*
+*.code-workspace
+
+# Python cache (already covered but being explicit)
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+
+# Virtual environments (already covered but being explicit)
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Database files (already covered but being explicit)
+db.sqlite3
+db.sqlite3-journal
+*.db
+*.sqlite
+*.sqlite3
+
+# ChromaDB data files
+data/chromadb/**/*
+!data/chromadb/.gitkeep
+
+# Static files (collected, don't commit)
+staticfiles/**/*
+!staticfiles/.gitkeep
+
+# Media files (user uploads, don't commit)
+media/**/*
+!media/.gitkeep
+
+# Environment files (keep .env.example as template)
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+!.env.example
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Temporary and backup files
+*.tmp
+*.temp
+*.bak
+*.backup
+*.old
+*.swp
+*.swo
+*~
+
+# Archive files
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+
+# OS-specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.AppleDouble
+.LSOverride
+Icon
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+.fuse_hidden*
+.directory
+.Trash-*
+
+# Evaluation and test artifacts
+agent_evaluation_scores.json
+*.eval.json
+test-results/
+test-reports/
+
+# Build and distribution
+build/
+dist/
+*.egg-info/
+.eggs/
+wheels/
